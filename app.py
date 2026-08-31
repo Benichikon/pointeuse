@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- INJECTION CSS DESIGN & THÈME ---
+# --- INJECTION CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; }
@@ -46,7 +46,6 @@ supabase = init_supabase()
 def arrondir_quart_heure(heures):
     return round(heures * 4) / 4
 
-# Récupération rapide en 1 seule requête globale
 def get_donnees_pointage():
     emps = supabase.table('employes').select('id, nom, pin').execute().data or []
     punchs = supabase.table('punchs').select('employe_id, type_punch, timestamp').order('timestamp', desc=True).limit(100).execute().data or []
@@ -58,7 +57,10 @@ def get_donnees_pointage():
         emp_punchs = [p for p in punchs if p['employe_id'] == emp['id']]
         if emp_punchs:
             dernier = emp_punchs[0]
-            dt_str = pd.to_datetime(dernier['timestamp']).strftime('%H:%M')
+            try:
+                dt_str = pd.to_datetime(dernier['timestamp'], errors='coerce').strftime('%H:%M')
+            except Exception:
+                dt_str = "--:--"
             statuts.append({"nom": emp['nom'], "statut": dernier['type_punch'], "heure": dt_str})
             dernier_statut_map[emp['id']] = dernier['type_punch']
         else:
@@ -253,7 +255,9 @@ elif menu == "⚙️ Administration":
                         })
                     
                     df_p = pd.DataFrame(records)
-                    df_p['timestamp'] = pd.to_datetime(df_p['timestamp'], utc=True)
+                    # SÉCURISATION DU FORMAT DE DATE : ignorer les erreurs de conversion
+                    df_p['timestamp'] = pd.to_datetime(df_p['timestamp'], errors='coerce', utc=True)
+                    df_p = df_p.dropna(subset=['timestamp']) # Supprime les lignes invalides
                     
                     rapport = []
                     for nom, group in df_p.groupby('nom'):
