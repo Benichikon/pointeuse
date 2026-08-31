@@ -15,69 +15,21 @@ st.set_page_config(
 # --- INJECTION CSS DESIGN & THÈME ---
 st.markdown("""
     <style>
-    .stApp {
-        background-color: #f8f9fa;
-    }
-    
-    h1 {
-        color: #1e293b;
-        font-weight: 700 !important;
-        text-align: center;
-        margin-bottom: 20px !important;
-    }
-    
+    .stApp { background-color: #f8f9fa; }
+    h1 { color: #1e293b; font-weight: 700 !important; text-align: center; margin-bottom: 20px !important; }
     .pin-display {
-        background-color: #ffffff;
-        border: 2px solid #cbd5e1;
-        border-radius: 12px;
-        padding: 15px;
-        text-align: center;
-        font-size: 32px;
-        letter-spacing: 12px;
-        font-weight: bold;
-        color: #0f172a;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        margin-bottom: 25px;
+        background-color: #ffffff; border: 2px solid #cbd5e1; border-radius: 12px;
+        padding: 15px; text-align: center; font-size: 32px; letter-spacing: 12px;
+        font-weight: bold; color: #0f172a; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); margin-bottom: 25px;
     }
-
     div.stButton > button {
-        border-radius: 12px !important;
-        height: 60px !important;
-        font-size: 20px !important;
-        font-weight: 600 !important;
-        border: 1px solid #cbd5e1 !important;
-        background-color: #ffffff !important;
-        color: #1e293b !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.04) !important;
-        transition: all 0.15s ease-in-out !important;
+        border-radius: 12px !important; height: 60px !important; font-size: 20px !important;
+        font-weight: 600 !important; border: 1px solid #cbd5e1 !important; background-color: #ffffff !important;
+        color: #1e293b !important; box-shadow: 0 2px 4px rgba(0,0,0,0.04) !important; transition: all 0.15s ease-in-out !important;
     }
-    
-    div.stButton > button:active {
-        transform: scale(0.96);
-        background-color: #f1f5f9 !important;
-    }
-
-    /* Styles Statut Lightspeed */
-    .status-card-in {
-        background-color: #ecfdf5;
-        border: 1px solid #a7f3d0;
-        border-radius: 8px;
-        padding: 8px 12px;
-        margin-bottom: 6px;
-        color: #065f46;
-        font-weight: 600;
-        font-size: 14px;
-    }
-    .status-card-out {
-        background-color: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 8px 12px;
-        margin-bottom: 6px;
-        color: #64748b;
-        font-weight: 500;
-        font-size: 14px;
-    }
+    div.stButton > button:active { transform: scale(0.96); background-color: #f1f5f9 !important; }
+    .status-card-in { background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; color: #065f46; font-weight: 600; font-size: 14px; }
+    .status-card-out { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; color: #64748b; font-weight: 500; font-size: 14px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -92,50 +44,42 @@ supabase = init_supabase()
 
 # --- FONCTIONS UTILITAIRES ---
 def arrondir_quart_heure(heures):
-    """Arrondit au 0.25 d'heure le plus proche"""
     return round(heures * 4) / 4
 
-def get_statut_tous_employes():
-    """Récupère la liste de tous les employés et leur statut actuel (IN/OUT + heure)"""
-    emps = supabase.table('employes').select('id, nom').execute()
-    statuts = []
+# Récupération rapide en 1 seule requête globale
+def get_donnees_pointage():
+    emps = supabase.table('employes').select('id, nom, pin').execute().data or []
+    punchs = supabase.table('punchs').select('employe_id, type_punch, timestamp').order('timestamp', desc=True).limit(100).execute().data or []
     
-    if emps.data:
-        for e in emps.data:
-            res = supabase.table('punchs').select('type_punch, timestamp').eq('employe_id', e['id']).order('timestamp', desc=True).limit(1).execute()
-            if res.data:
-                dt_punch = pd.to_datetime(res.data[0]['timestamp']).strftime('%H:%M')
-                statuts.append({
-                    "nom": e['nom'],
-                    "statut": res.data[0]['type_punch'],
-                    "heure": dt_punch
-                })
-            else:
-                statuts.append({
-                    "nom": e['nom'],
-                    "statut": "OUT",
-                    "heure": "--:--"
-                })
-    return statuts
-
-def get_dernier_punch(employe_id):
-    res = supabase.table('punchs').select('type_punch').eq('employe_id', employe_id).order('timestamp', desc=True).limit(1).execute()
-    return res.data[0]['type_punch'] if res.data else None
+    statuts = []
+    dernier_statut_map = {}
+    
+    for emp in emps:
+        emp_punchs = [p for p in punchs if p['employe_id'] == emp['id']]
+        if emp_punchs:
+            dernier = emp_punchs[0]
+            dt_str = pd.to_datetime(dernier['timestamp']).strftime('%H:%M')
+            statuts.append({"nom": emp['nom'], "statut": dernier['type_punch'], "heure": dt_str})
+            dernier_statut_map[emp['id']] = dernier['type_punch']
+        else:
+            statuts.append({"nom": emp['nom'], "statut": "OUT", "heure": "--:--"})
+            dernier_statut_map[emp['id']] = "OUT"
+            
+    return emps, statuts, dernier_statut_map
 
 # --- MENU NAVIGATION ---
 st.sidebar.title("📌 Menu")
 menu = st.sidebar.radio("Sélectionner la section :", ["⏱️ Pointage (iPad)", "⚙️ Administration"])
 
 # ==========================================
-# 1. ÉCRAN DE POINTAGE (STYLE LIGHTSPEED)
+# 1. ÉCRAN DE POINTAGE (IPAD)
 # ==========================================
 if menu == "⏱️ Pointage (iPad)":
     st.title("⏱️ Poinçonnage")
     
-    # BANNIÈRE LIGHTSPEED : EMPLOYÉS ACTIFS EN CE MOMENT
-    st.markdown("### 📋 Statut de l'équipe")
-    statuts = get_statut_tous_employes()
+    emps_data, statuts, dernier_statut_map = get_donnees_pointage()
     
+    st.markdown("### 📋 Statut de l'équipe")
     col_in_list, col_out_list = st.columns(2)
     
     with col_in_list:
@@ -158,7 +102,6 @@ if menu == "⏱️ Pointage (iPad)":
 
     st.divider()
 
-    # PAVÉ NUMÉRIQUE
     if "pin_input" not in st.session_state:
         st.session_state.pin_input = ""
 
@@ -187,12 +130,12 @@ if menu == "⏱️ Pointage (iPad)":
         pin = st.session_state.pin_input
         st.session_state.pin_input = ""
         
-        emp_res = supabase.table('employes').select('id, nom').eq('pin', pin).execute()
+        emp_trouve = next((e for e in emps_data if str(e['pin']) == str(pin)), None)
         
-        if emp_res.data:
-            emp_id = emp_res.data[0]['id']
-            emp_nom = emp_res.data[0]['nom']
-            dernier_type = get_dernier_punch(emp_id)
+        if emp_trouve:
+            emp_id = emp_trouve['id']
+            emp_nom = emp_trouve['nom']
+            dernier_type = dernier_statut_map.get(emp_id, "OUT")
             nouveau_type = "OUT" if dernier_type == "IN" else "IN"
             
             now_iso = datetime.now().isoformat()
