@@ -4,6 +4,83 @@ from datetime import datetime, date, time
 import io
 from supabase import create_client, Client
 
+# --- CONFIGURATION PAGE ---
+st.set_page_config(
+    page_title="Pointeuse numérique", 
+    page_icon="⏱️", 
+    layout="centered",
+    initial_sidebar_state="expanded"
+)
+
+# --- INJECTION CSS DESIGN & THÈME ---
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #f8f9fa;
+    }
+    
+    h1 {
+        color: #1e293b;
+        font-weight: 700 !important;
+        text-align: center;
+        margin-bottom: 20px !important;
+    }
+    
+    .pin-display {
+        background-color: #ffffff;
+        border: 2px solid #cbd5e1;
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+        font-size: 32px;
+        letter-spacing: 12px;
+        font-weight: bold;
+        color: #0f172a;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        margin-bottom: 25px;
+    }
+
+    div.stButton > button {
+        border-radius: 12px !important;
+        height: 60px !important;
+        font-size: 20px !important;
+        font-weight: 600 !important;
+        border: 1px solid #cbd5e1 !important;
+        background-color: #ffffff !important;
+        color: #1e293b !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04) !important;
+        transition: all 0.15s ease-in-out !important;
+    }
+    
+    div.stButton > button:active {
+        transform: scale(0.96);
+        background-color: #f1f5f9 !important;
+    }
+
+    /* Styles Statut Lightspeed */
+    .status-card-in {
+        background-color: #ecfdf5;
+        border: 1px solid #a7f3d0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 6px;
+        color: #065f46;
+        font-weight: 600;
+        font-size: 14px;
+    }
+    .status-card-out {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 6px;
+        color: #64748b;
+        font-weight: 500;
+        font-size: 14px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- CONNEXION SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
@@ -15,28 +92,78 @@ supabase = init_supabase()
 
 # --- FONCTIONS UTILITAIRES ---
 def arrondir_quart_heure(heures):
-    """Arrondit au 0.25 d'heure le plus proche (ex: 7.13 -> 7.25)"""
+    """Arrondit au 0.25 d'heure le plus proche"""
     return round(heures * 4) / 4
+
+def get_statut_tous_employes():
+    """Récupère la liste de tous les employés et leur statut actuel (IN/OUT + heure)"""
+    emps = supabase.table('employes').select('id, nom').execute()
+    statuts = []
+    
+    if emps.data:
+        for e in emps.data:
+            res = supabase.table('punchs').select('type_punch, timestamp').eq('employe_id', e['id']).order('timestamp', desc=True).limit(1).execute()
+            if res.data:
+                dt_punch = pd.to_datetime(res.data[0]['timestamp']).strftime('%H:%M')
+                statuts.append({
+                    "nom": e['nom'],
+                    "statut": res.data[0]['type_punch'],
+                    "heure": dt_punch
+                })
+            else:
+                statuts.append({
+                    "nom": e['nom'],
+                    "statut": "OUT",
+                    "heure": "--:--"
+                })
+    return statuts
 
 def get_dernier_punch(employe_id):
     res = supabase.table('punchs').select('type_punch').eq('employe_id', employe_id).order('timestamp', desc=True).limit(1).execute()
     return res.data[0]['type_punch'] if res.data else None
 
-# --- CONFIGURATION PAGE ---
-st.set_page_config(page_title="Système de Pointage", page_icon="⏱️", layout="centered")
-
-menu = st.sidebar.radio("Navigation", ["⏱️ Pointage (PIN)", "⚙️ Administration"])
+# --- MENU NAVIGATION ---
+st.sidebar.title("📌 Menu")
+menu = st.sidebar.radio("Sélectionner la section :", ["⏱️ Pointage (iPad)", "⚙️ Administration"])
 
 # ==========================================
-# 1. ÉCRAN DE POINTAGE (EMPLOYÉS)
+# 1. ÉCRAN DE POINTAGE (STYLE LIGHTSPEED)
 # ==========================================
-if menu == "⏱️ Pointage (PIN)":
+if menu == "⏱️ Pointage (iPad)":
     st.title("⏱️ Poinçonnage")
     
+    # BANNIÈRE LIGHTSPEED : EMPLOYÉS ACTIFS EN CE MOMENT
+    st.markdown("### 📋 Statut de l'équipe")
+    statuts = get_statut_tous_employes()
+    
+    col_in_list, col_out_list = st.columns(2)
+    
+    with col_in_list:
+        st.markdown("**🟢 En poste**")
+        en_poste = [e for e in statuts if e['statut'] == 'IN']
+        if en_poste:
+            for emp in en_poste:
+                st.markdown(f'<div class="status-card-in">🟢 {emp["nom"]} <span style="float:right; font-weight:normal; font-size:12px;">Depuis {emp["heure"]}</span></div>', unsafe_allow_html=True)
+        else:
+            st.caption("Aucun employé en poste.")
+
+    with col_out_list:
+        st.markdown("**🔴 Absents / Parti(e)s**")
+        absents = [e for e in statuts if e['statut'] == 'OUT']
+        if absents:
+            for emp in absents:
+                st.markdown(f'<div class="status-card-out">🔴 {emp["nom"]} <span style="float:right; font-weight:normal; font-size:12px;">Parti à {emp["heure"]}</span></div>', unsafe_allow_html=True)
+        else:
+            st.caption("Tout le monde est en poste.")
+
+    st.divider()
+
+    # PAVÉ NUMÉRIQUE
     if "pin_input" not in st.session_state:
         st.session_state.pin_input = ""
 
-    st.markdown(f"### Code PIN : `{'*' * len(st.session_state.pin_input)}`")
+    pin_display_text = "•" * len(st.session_state.pin_input) if st.session_state.pin_input else "Entrez votre PIN"
+    st.markdown(f'<div class="pin-display">{pin_display_text}</div>', unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns(3)
     for i in range(1, 10):
@@ -77,44 +204,50 @@ if menu == "⏱️ Pointage (PIN)":
             
             now_str = datetime.now().strftime('%H:%M:%S')
             if nouveau_type == "IN":
-                st.success(f"🟢 Bonjour {emp_nom} ! Punch d'ENTRÉE enregistré à {now_str}")
+                st.success(f"🟢 **Bonjour {emp_nom} !** Enregistré à {now_str}")
             else:
-                st.info(f"🔴 Au revoir {emp_nom} ! Punch de SORTIE enregistré à {now_str}")
+                st.info(f"🔴 **Au revoir {emp_nom} !** Enregistré à {now_str}")
+            st.rerun()
         else:
-            st.error("❌ Code PIN invalide.")
+            st.error("❌ Code PIN incorrect.")
 
 # ==========================================
 # 2. PANNEAU D'ADMINISTRATION
 # ==========================================
 elif menu == "⚙️ Administration":
-    st.title("⚙️ Administration")
+    st.title("⚙️ Gestion & Rapports")
     
-    pwd = st.text_input("Mot de passe Admin", type="password")
+    pwd = st.text_input("Mot de passe administrateur", type="password")
     if pwd == "admin123":
-        tab_emp, tab_corr, tab_sup, tab_rep = st.tabs(["👥 Employés", "➕ Ajouter un Quart", "🗑️ Gérer / Supprimer", "📊 Rapports XLSX"])
+        tab_emp, tab_corr, tab_sup, tab_rep = st.tabs([
+            "👥 Employés", 
+            "➕ Ajouter un Quart", 
+            "🗑️ Gérer Punchs", 
+            "📊 Exporter Excel"
+        ])
         
-        # TAB 1 : EMPLOIÉS
         with tab_emp:
-            st.subheader("Ajouter un employé")
-            with st.form("add_emp"):
-                nom = st.text_input("Nom de l'employé")
-                pin = st.text_input("Code PIN unique (chiffres)", type="password")
-                if st.form_submit_button("Ajouter"):
+            st.subheader("Créer un nouvel employé")
+            with st.form("add_emp", clear_on_submit=True):
+                nom = st.text_input("Nom complet")
+                pin = st.text_input("Code PIN confidentiel", type="password")
+                if st.form_submit_button("Créer l'employé"):
                     if nom and pin:
                         try:
                             supabase.table('employes').insert({"nom": nom, "pin": pin}).execute()
                             st.success(f"Employé {nom} ajouté !")
-                        except Exception as e:
-                            st.error("Erreur ou PIN déjà utilisé.")
+                            st.rerun()
+                        except Exception:
+                            st.error("Erreur : ce code PIN est déjà attribué.")
             
-            st.subheader("Liste des employés")
+            st.divider()
+            st.subheader("Liste des employés actifs")
             emps = supabase.table('employes').select('id, nom, pin').execute()
             if emps.data:
                 st.dataframe(pd.DataFrame(emps.data), use_container_width=True)
 
-        # TAB 2 : AJOUTER UN QUART COMPLET (ENTRÉE + SORTIE)
         with tab_corr:
-            st.subheader("Ajouter un quart de travail manuel")
+            st.subheader("Saisie manuelle d'un quart complet")
             emps = supabase.table('employes').select('id, nom').execute()
             
             if emps.data:
@@ -123,32 +256,20 @@ elif menu == "⚙️ Administration":
                 date_p = st.date_input("Date du quart", date.today())
                 
                 col_in, col_out = st.columns(2)
-                heure_in = col_in.time_input("Heure d'entrée (IN)", time(9, 0))
-                heure_out = col_out.time_input("Heure de sortie (OUT)", time(17, 0))
+                heure_in = col_in.time_input("Heure d'arrivée (IN)", time(9, 0))
+                heure_out = col_out.time_input("Heure de départ (OUT)", time(17, 0))
                 
-                if st.button("➕ Enregistrer le quart complet"):
+                if st.button("➕ Enregistrer le quart"):
                     dt_in = datetime.combine(date_p, heure_in).isoformat()
                     dt_out = datetime.combine(date_p, heure_out).isoformat()
                     
-                    supabase.table('punchs').insert({
-                        "employe_id": emp_dict[emp_choisi],
-                        "timestamp": dt_in,
-                        "type_punch": "IN",
-                        "manuel": 1
-                    }).execute()
+                    supabase.table('punchs').insert({"employe_id": emp_dict[emp_choisi], "timestamp": dt_in, "type_punch": "IN", "manuel": 1}).execute()
+                    supabase.table('punchs').insert({"employe_id": emp_dict[emp_choisi], "timestamp": dt_out, "type_punch": "OUT", "manuel": 1}).execute()
                     
-                    supabase.table('punchs').insert({
-                        "employe_id": emp_dict[emp_choisi],
-                        "timestamp": dt_out,
-                        "type_punch": "OUT",
-                        "manuel": 1
-                    }).execute()
-                    
-                    st.success(f"Quart enregistré de {heure_in.strftime('%H:%M')} à {heure_out.strftime('%H:%M')} !")
+                    st.success(f"Quart ajouté pour {emp_choisi} !")
 
-        # TAB 3 : SUPPRIMER OU ÉPURER DES PUNCHS
         with tab_sup:
-            st.subheader("Historique et suppression des punchs")
+            st.subheader("Derniers poinçonnages")
             punch_data = supabase.table('punchs').select('id, timestamp, type_punch, employes(nom)').order('timestamp', desc=True).limit(50).execute()
             
             if punch_data.data:
@@ -157,27 +278,25 @@ elif menu == "⚙️ Administration":
                     records.append({
                         'ID': row['id'],
                         'Employé': row['employes']['nom'] if row.get('employes') else 'Inconnu',
-                        'Date/Heure': row['timestamp'],
-                        'Type': row['type_punch']
+                        'Horodatage': row['timestamp'],
+                        'Action': row['type_punch']
                     })
-                df_view = pd.DataFrame(records)
-                st.dataframe(df_view, use_container_width=True)
+                st.dataframe(pd.DataFrame(records), use_container_width=True)
                 
-                st.markdown("---")
-                id_to_delete = st.number_input("Entrer l'ID du punch à supprimer", min_value=1, step=1)
-                if st.button("🗑️ Supprimer ce punch"):
+                st.divider()
+                id_to_delete = st.number_input("ID à supprimer", min_value=1, step=1)
+                if st.button("🗑️ Supprimer la ligne"):
                     supabase.table('punchs').delete().eq('id', id_to_delete).execute()
-                    st.success(f"Punch #{id_to_delete} supprimé !")
+                    st.success(f"Punch #{id_to_delete} supprimé.")
                     st.rerun()
 
-        # TAB 4 : EXPORTATION EXCEL
         with tab_rep:
-            st.subheader("Générer le rapport")
+            st.subheader("Rapport de paie")
             col1, col2 = st.columns(2)
-            d_debut = col1.date_input("Date de début", date.today())
-            d_fin = col2.date_input("Date de fin", date.today())
+            d_debut = col1.date_input("Du", date.today())
+            d_fin = col2.date_input("Au", date.today())
             
-            if st.button("📊 Calculer et Générer XLSX"):
+            if st.button("📊 Générer le rapport Excel"):
                 data = supabase.table('punchs').select('id, timestamp, type_punch, employes(nom)').gte('timestamp', f"{d_debut}T00:00:00").lte('timestamp', f"{d_fin}T23:59:59").execute()
                 
                 if data.data:
@@ -205,9 +324,7 @@ elif menu == "⚙️ Administration":
                                     out_time = group.loc[i+1, 'timestamp']
                                     i += 1
                                 
-                                duree_h = 0
-                                if out_time:
-                                    duree_h = (out_time - in_time).total_seconds() / 3600.0
+                                duree_h = (out_time - in_time).total_seconds() / 3600.0 if out_time else 0
                                 
                                 rapport.append({
                                     "Employé": nom,
@@ -226,7 +343,7 @@ elif menu == "⚙️ Administration":
                             'Heures Arrondies (0.25h)': 'sum'
                         }).reset_index()
 
-                        st.markdown("### Résumé des Heures")
+                        st.markdown("### Résumé de la période")
                         st.dataframe(df_summary, use_container_width=True)
 
                         output = io.BytesIO()
@@ -235,12 +352,12 @@ elif menu == "⚙️ Administration":
                             df_res.to_excel(writer, sheet_name='Détail Punchs', index=False)
                         
                         st.download_button(
-                            label="📥 Télécharger le rapport Excel (.xlsx)",
+                            label="📥 Télécharger le fichier Excel (.xlsx)",
                             data=output.getvalue(),
                             file_name=f"rapport_heures_{d_debut}_au_{d_fin}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                     else:
-                        st.warning("Aucune paire de punchs complète (IN/OUT) trouvée pour générer des heures calculables.")
+                        st.warning("Aucun quart complet trouvé sur cette période.")
                 else:
-                    st.warning("Aucun punch trouvé pour cette période.")
+                    st.warning("Aucune donnée sur cette période.")
