@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime, date, time
 import io
 from supabase import create_client, Client
 
@@ -91,8 +91,9 @@ elif menu == "⚙️ Administration":
     
     pwd = st.text_input("Mot de passe Admin", type="password")
     if pwd == "admin123":
-        tab_emp, tab_corr, tab_rep = st.tabs(["👥 Employés", "✏️ Corriger Punchs", "📊 Rapports XLSX"])
+        tab_emp, tab_corr, tab_sup, tab_rep = st.tabs(["👥 Employés", "➕ Ajouter un Quart", "🗑️ Gérer / Supprimer", "📊 Rapports XLSX"])
         
+        # TAB 1 : EMPLOIÉS
         with tab_emp:
             st.subheader("Ajouter un employé")
             with st.form("add_emp"):
@@ -111,27 +112,65 @@ elif menu == "⚙️ Administration":
             if emps.data:
                 st.dataframe(pd.DataFrame(emps.data), use_container_width=True)
 
+        # TAB 2 : AJOUTER UN QUART COMPLET (ENTRÉE + SORTIE)
         with tab_corr:
-            st.subheader("Ajouter un punch manuel")
+            st.subheader("Ajouter un quart de travail manuel")
             emps = supabase.table('employes').select('id, nom').execute()
             
             if emps.data:
                 emp_dict = {e['nom']: e['id'] for e in emps.data}
-                emp_choisi = st.selectbox("Employé", list(emp_dict.keys()))
-                date_p = st.date_input("Date", date.today())
-                heure_p = st.time_input("Heure", datetime.now().time())
-                type_p = st.selectbox("Type", ["IN", "OUT"])
+                emp_choisi = st.selectbox("Employé", list(emp_dict.keys()), key="select_emp_quart")
+                date_p = st.date_input("Date du quart", date.today())
                 
-                if st.button("Enregistrer le punch manuel"):
-                    dt = datetime.combine(date_p, heure_p).isoformat()
+                col_in, col_out = st.columns(2)
+                heure_in = col_in.time_input("Heure d'entrée (IN)", time(9, 0))
+                heure_out = col_out.time_input("Heure de sortie (OUT)", time(17, 0))
+                
+                if st.button("➕ Enregistrer le quart complet"):
+                    dt_in = datetime.combine(date_p, heure_in).isoformat()
+                    dt_out = datetime.combine(date_p, heure_out).isoformat()
+                    
                     supabase.table('punchs').insert({
                         "employe_id": emp_dict[emp_choisi],
-                        "timestamp": dt,
-                        "type_punch": type_p,
+                        "timestamp": dt_in,
+                        "type_punch": "IN",
                         "manuel": 1
                     }).execute()
-                    st.success("Punch manuel ajouté !")
+                    
+                    supabase.table('punchs').insert({
+                        "employe_id": emp_dict[emp_choisi],
+                        "timestamp": dt_out,
+                        "type_punch": "OUT",
+                        "manuel": 1
+                    }).execute()
+                    
+                    st.success(f"Quart enregistré de {heure_in.strftime('%H:%M')} à {heure_out.strftime('%H:%M')} !")
 
+        # TAB 3 : SUPPRIMER OU ÉPURER DES PUNCHS
+        with tab_sup:
+            st.subheader("Historique et suppression des punchs")
+            punch_data = supabase.table('punchs').select('id, timestamp, type_punch, employes(nom)').order('timestamp', desc=True).limit(50).execute()
+            
+            if punch_data.data:
+                records = []
+                for row in punch_data.data:
+                    records.append({
+                        'ID': row['id'],
+                        'Employé': row['employes']['nom'] if row.get('employes') else 'Inconnu',
+                        'Date/Heure': row['timestamp'],
+                        'Type': row['type_punch']
+                    })
+                df_view = pd.DataFrame(records)
+                st.dataframe(df_view, use_container_width=True)
+                
+                st.markdown("---")
+                id_to_delete = st.number_input("Entrer l'ID du punch à supprimer", min_value=1, step=1)
+                if st.button("🗑️ Supprimer ce punch"):
+                    supabase.table('punchs').delete().eq('id', id_to_delete).execute()
+                    st.success(f"Punch #{id_to_delete} supprimé !")
+                    st.rerun()
+
+        # TAB 4 : EXPORTATION EXCEL
         with tab_rep:
             st.subheader("Générer le rapport")
             col1, col2 = st.columns(2)
@@ -146,13 +185,13 @@ elif menu == "⚙️ Administration":
                     for row in data.data:
                         records.append({
                             'id': row['id'],
-                            'nom': row['employes']['nom'],
+                            'nom': row['employes']['nom'] if row.get('employes') else 'Inconnu',
                             'timestamp': row['timestamp'],
                             'type_punch': row['type_punch']
                         })
                     
                     df_p = pd.DataFrame(records)
-                    df_p['timestamp'] = pd.to_datetime(df_p['timestamp'])
+                    df_p['timestamp'] = pd.to_datetime(df_p['timestamp'], utc=True)
                     
                     rapport = []
                     for nom, group in df_p.groupby('nom'):
@@ -181,24 +220,27 @@ elif menu == "⚙️ Administration":
                             i += 1
                     
                     df_res = pd.DataFrame(rapport)
-                    df_summary = df_res.groupby('Employé').agg({
-                        'Heures Réelles': 'sum',
-                        'Heures Arrondies (0.25h)': 'sum'
-                    }).reset_index()
+                    if not df_res.empty:
+                        df_summary = df_res.groupby('Employé').agg({
+                            'Heures Réelles': 'sum',
+                            'Heures Arrondies (0.25h)': 'sum'
+                        }).reset_index()
 
-                    st.markdown("### Résumé des Heures")
-                    st.dataframe(df_summary, use_container_width=True)
+                        st.markdown("### Résumé des Heures")
+                        st.dataframe(df_summary, use_container_width=True)
 
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_summary.to_excel(writer, sheet_name='Résumé', index=False)
-                        df_res.to_excel(writer, sheet_name='Détail Punchs', index=False)
-                    
-                    st.download_button(
-                        label="📥 Télécharger le rapport Excel (.xlsx)",
-                        data=output.getvalue(),
-                        file_name=f"rapport_heures_{d_debut}_au_{d_fin}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df_summary.to_excel(writer, sheet_name='Résumé', index=False)
+                            df_res.to_excel(writer, sheet_name='Détail Punchs', index=False)
+                        
+                        st.download_button(
+                            label="📥 Télécharger le rapport Excel (.xlsx)",
+                            data=output.getvalue(),
+                            file_name=f"rapport_heures_{d_debut}_au_{d_fin}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    else:
+                        st.warning("Aucune paire de punchs complète (IN/OUT) trouvée pour générer des heures calculables.")
                 else:
                     st.warning("Aucun punch trouvé pour cette période.")
