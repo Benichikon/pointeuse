@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, date, time
 import zoneinfo
 import io
+import os
 from supabase import create_client, Client
 
 # --- CONFIGURATION FUSEAU HORAIRE QUEBEC ---
@@ -10,19 +11,74 @@ TZ_QUEBEC = zoneinfo.ZoneInfo("America/Toronto")
 
 # --- CONFIGURATION PAGE ---
 st.set_page_config(
-    page_title="Pointeuse numérique", 
-    page_icon="⏱️", 
+    page_title="Elliott & Lily - Pointeuse", 
+    page_icon="🐾", 
     layout="centered",
     initial_sidebar_state="expanded"
 )
 
-# --- INJECTION CSS DESIGN & THÈME ---
+# --- INJECTION CSS AVEC PALETTE ELLIOTT & LILY ---
 st.markdown("""
     <style>
-    .stApp { background-color: #f8f9fa; }
-    h1 { color: #1e293b; font-weight: 700 !important; text-align: center; margin-bottom: 20px !important; }
-    .status-card-in { background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 10px 14px; margin-bottom: 6px; color: #065f46; font-weight: 600; font-size: 15px; }
-    .status-card-out { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 6px; color: #64748b; font-weight: 500; font-size: 15px; }
+    /* Fond principal et typographie */
+    .stApp { 
+        background-color: #f4f7f6; 
+    }
+    
+    /* Titres principaux */
+    h1, h2, h3 { 
+        color: #0f4c5c !important; 
+        font-weight: 700 !important; 
+    }
+    
+    /* Bannière d'en-tête */
+    .banner-img {
+        width: 100%;
+        max-height: 220px;
+        object-fit: cover;
+        border-radius: 14px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    
+    /* Cartes de statut (Lightspeed) */
+    .status-card-in { 
+        background-color: #e6f7f5; 
+        border-left: 5px solid #169baa; 
+        border-radius: 8px; 
+        padding: 12px 16px; 
+        margin-bottom: 8px; 
+        color: #0f4c5c; 
+        font-weight: 600; 
+        font-size: 15px; 
+        box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+    }
+    .status-card-out { 
+        background-color: #ffffff; 
+        border-left: 5px solid #cbd5e1; 
+        border-radius: 8px; 
+        padding: 12px 16px; 
+        margin-bottom: 8px; 
+        color: #64748b; 
+        font-weight: 500; 
+        font-size: 15px; 
+        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+    }
+
+    /* Bouton principal assorti */
+    div.stButton > button[kind="primary"], div.stFormSubmitButton > button {
+        background-color: #169baa !important;
+        color: white !important;
+        border-radius: 10px !important;
+        border: none !important;
+        font-weight: 600 !important;
+        height: 50px !important;
+        font-size: 18px !important;
+        transition: background-color 0.2s ease !important;
+    }
+    div.stFormSubmitButton > button:hover {
+        background-color: #0f4c5c !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -64,19 +120,30 @@ def get_donnees_pointage():
             
     return emps, statuts, dernier_statut_map
 
-# --- MENU NAVIGATION ---
-st.sidebar.title("📌 Menu")
-menu = st.sidebar.radio("Sélectionner la section :", ["⏱️ Pointage (iPad)", "⚙️ Administration"])
+# --- MENU NAVIGATION & LOGO ---
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", use_container_width=True)
+elif os.path.exists("logo.jpg"):
+    st.sidebar.image("logo.jpg", use_container_width=True)
+
+st.sidebar.title("🐾 Elliott & Lily")
+menu = st.sidebar.radio("Navigation :", ["⏱️ Pointage (iPad)", "⚙️ Administration"])
 
 # ==========================================
-# 1. ÉCRAN DE POINTAGE (SAISIE CLAVIER)
+# 1. ÉCRAN DE POINTAGE (IPAD)
 # ==========================================
 if menu == "⏱️ Pointage (iPad)":
-    st.title("⏱️ Poinçonnage")
+    # Affichage de la bannière si présente
+    if os.path.exists("banner.jpg"):
+        st.image("banner.jpg", use_container_width=True)
+    elif os.path.exists("banner.png"):
+        st.image("banner.png", use_container_width=True)
+
+    st.title("⏱️ Poinçonnage de l'Équipe")
     
     emps_data, statuts, dernier_statut_map = get_donnees_pointage()
     
-    st.markdown("### 📋 Statut de l'équipe")
+    st.markdown("### 📋 Présences en direct")
     col_in_list, col_out_list = st.columns(2)
     
     with col_in_list:
@@ -84,12 +151,12 @@ if menu == "⏱️ Pointage (iPad)":
         en_poste = [e for e in statuts if e['statut'] == 'IN']
         if en_poste:
             for emp in en_poste:
-                st.markdown(f'<div class="status-card-in">🟢 {emp["nom"]} <span style="float:right; font-weight:normal; font-size:12px;">Depuis {emp["heure"]}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="status-card-in">🐾 {emp["nom"]} <span style="float:right; font-weight:normal; font-size:12px;">Depuis {emp["heure"]}</span></div>', unsafe_allow_html=True)
         else:
             st.caption("Aucun employé en poste.")
 
     with col_out_list:
-        st.markdown("**🔴 Absents / Parti(e)s**")
+        st.markdown("**🔴 Hors poste**")
         absents = [e for e in statuts if e['statut'] == 'OUT']
         if absents:
             for emp in absents:
@@ -99,11 +166,11 @@ if menu == "⏱️ Pointage (iPad)":
 
     st.divider()
 
-    # FORMULAIRE POUR SAISIE RAPIDE AU CLAVIER
-    st.markdown("### 🔑 Entrez votre PIN au clavier")
+    # SAISIE AU CLAVIER
+    st.markdown("### 🔑 Saisissez votre PIN")
     with st.form("form_pin_clavier", clear_on_submit=True):
-        pin_saisi = st.text_input("Code PIN", type="password", help="Tapez votre PIN et appuyez sur Entrée", placeholder="Entrez votre PIN ici...")
-        valider = st.form_submit_button("✅ Enregistrer le punch", use_container_width=True)
+        pin_saisi = st.text_input("Code PIN", type="password", help="Tapez votre PIN et appuyez sur Entrée", placeholder="Code PIN...")
+        valider = st.form_submit_button("✅ Valider le poinçonnage", use_container_width=True)
         
         if valider:
             if pin_saisi:
@@ -126,9 +193,9 @@ if menu == "⏱️ Pointage (iPad)":
                     
                     now_str = now_qc.strftime('%H:%M:%S')
                     if nouveau_type == "IN":
-                        st.success(f"🟢 **Bonjour {emp_nom} !** Enregistré à {now_str}")
+                        st.success(f"🟢 **Bonjour {emp_nom} !** Punch d'entrée enregistré à {now_str}")
                     else:
-                        st.info(f"🔴 **Au revoir {emp_nom} !** Enregistré à {now_str}")
+                        st.info(f"🔴 **Au revoir {emp_nom} !** Punch de sortie enregistré à {now_str}")
                     st.rerun()
                 else:
                     st.error("❌ Code PIN incorrect.")
