@@ -1,8 +1,12 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date, time
+import zoneinfo
 import io
 from supabase import create_client, Client
+
+# --- CONFIGURATION FUSEAU HORAIRE QUEBEC ---
+TZ_QUEBEC = zoneinfo.ZoneInfo("America/Toronto")
 
 # --- CONFIGURATION PAGE ---
 st.set_page_config(
@@ -58,7 +62,9 @@ def get_donnees_pointage():
         if emp_punchs:
             dernier = emp_punchs[0]
             try:
-                dt_str = pd.to_datetime(dernier['timestamp'], errors='coerce').strftime('%H:%M')
+                dt_utc = pd.to_datetime(dernier['timestamp'], errors='coerce', utc=True)
+                dt_qc = dt_utc.tz_convert(TZ_QUEBEC)
+                dt_str = dt_qc.strftime('%H:%M')
             except Exception:
                 dt_str = "--:--"
             statuts.append({"nom": emp['nom'], "statut": dernier['type_punch'], "heure": dt_str})
@@ -140,14 +146,17 @@ if menu == "⏱️ Pointage (iPad)":
             dernier_type = dernier_statut_map.get(emp_id, "OUT")
             nouveau_type = "OUT" if dernier_type == "IN" else "IN"
             
-            now_iso = datetime.now().isoformat()
+            # Enregistrement à l'heure exacte du Québec
+            now_qc = datetime.now(TZ_QUEBEC)
+            now_iso = now_qc.isoformat()
+            
             supabase.table('punchs').insert({
                 "employe_id": emp_id,
                 "timestamp": now_iso,
                 "type_punch": nouveau_type
             }).execute()
             
-            now_str = datetime.now().strftime('%H:%M:%S')
+            now_str = now_qc.strftime('%H:%M:%S')
             if nouveau_type == "IN":
                 st.success(f"🟢 **Bonjour {emp_nom} !** Enregistré à {now_str}")
             else:
@@ -205,8 +214,8 @@ elif menu == "⚙️ Administration":
                 heure_out = col_out.time_input("Heure de départ (OUT)", time(17, 0))
                 
                 if st.button("➕ Enregistrer le quart"):
-                    dt_in = datetime.combine(date_p, heure_in).isoformat()
-                    dt_out = datetime.combine(date_p, heure_out).isoformat()
+                    dt_in = datetime.combine(date_p, heure_in).replace(tzinfo=TZ_QUEBEC).isoformat()
+                    dt_out = datetime.combine(date_p, heure_out).replace(tzinfo=TZ_QUEBEC).isoformat()
                     
                     supabase.table('punchs').insert({"employe_id": emp_dict[emp_choisi], "timestamp": dt_in, "type_punch": "IN", "manuel": 1}).execute()
                     supabase.table('punchs').insert({"employe_id": emp_dict[emp_choisi], "timestamp": dt_out, "type_punch": "OUT", "manuel": 1}).execute()
@@ -220,10 +229,17 @@ elif menu == "⚙️ Administration":
             if punch_data.data:
                 records = []
                 for row in punch_data.data:
+                    # Formatage propre de l'horodatage en heure du Québec
+                    try:
+                        dt_utc = pd.to_datetime(row['timestamp'], errors='coerce', utc=True)
+                        dt_qc = dt_utc.tz_convert(TZ_QUEBEC).strftime('%Y-%m-%d %H:%M:%S')
+                    except Exception:
+                        dt_qc = row['timestamp']
+
                     records.append({
                         'ID': row['id'],
                         'Employé': row['employes']['nom'] if row.get('employes') else 'Inconnu',
-                        'Horodatage': row['timestamp'],
+                        'Horodatage': dt_qc,
                         'Action': row['type_punch']
                     })
                 st.dataframe(pd.DataFrame(records), use_container_width=True)
@@ -255,9 +271,8 @@ elif menu == "⚙️ Administration":
                         })
                     
                     df_p = pd.DataFrame(records)
-                    # SÉCURISATION DU FORMAT DE DATE : ignorer les erreurs de conversion
-                    df_p['timestamp'] = pd.to_datetime(df_p['timestamp'], errors='coerce', utc=True)
-                    df_p = df_p.dropna(subset=['timestamp']) # Supprime les lignes invalides
+                    df_p['timestamp'] = pd.to_datetime(df_p['timestamp'], errors='coerce', utc=True).dt.tz_convert(TZ_QUEBEC)
+                    df_p = df_p.dropna(subset=['timestamp'])
                     
                     rapport = []
                     for nom, group in df_p.groupby('nom'):
