@@ -16,24 +16,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- INJECTION CSS ---
+# --- INJECTION CSS DESIGN & THÈME ---
 st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; }
     h1 { color: #1e293b; font-weight: 700 !important; text-align: center; margin-bottom: 20px !important; }
-    .pin-display {
-        background-color: #ffffff; border: 2px solid #cbd5e1; border-radius: 12px;
-        padding: 15px; text-align: center; font-size: 32px; letter-spacing: 12px;
-        font-weight: bold; color: #0f172a; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); margin-bottom: 25px;
-    }
-    div.stButton > button {
-        border-radius: 12px !important; height: 60px !important; font-size: 20px !important;
-        font-weight: 600 !important; border: 1px solid #cbd5e1 !important; background-color: #ffffff !important;
-        color: #1e293b !important; box-shadow: 0 2px 4px rgba(0,0,0,0.04) !important; transition: all 0.15s ease-in-out !important;
-    }
-    div.stButton > button:active { transform: scale(0.96); background-color: #f1f5f9 !important; }
-    .status-card-in { background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; color: #065f46; font-weight: 600; font-size: 14px; }
-    .status-card-out { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; color: #64748b; font-weight: 500; font-size: 14px; }
+    .status-card-in { background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 10px 14px; margin-bottom: 6px; color: #065f46; font-weight: 600; font-size: 15px; }
+    .status-card-out { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 6px; color: #64748b; font-weight: 500; font-size: 15px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -80,7 +69,7 @@ st.sidebar.title("📌 Menu")
 menu = st.sidebar.radio("Sélectionner la section :", ["⏱️ Pointage (iPad)", "⚙️ Administration"])
 
 # ==========================================
-# 1. ÉCRAN DE POINTAGE (IPAD)
+# 1. ÉCRAN DE POINTAGE (SAISIE CLAVIER)
 # ==========================================
 if menu == "⏱️ Pointage (iPad)":
     st.title("⏱️ Poinçonnage")
@@ -110,60 +99,39 @@ if menu == "⏱️ Pointage (iPad)":
 
     st.divider()
 
-    if "pin_input" not in st.session_state:
-        st.session_state.pin_input = ""
-
-    pin_display_text = "•" * len(st.session_state.pin_input) if st.session_state.pin_input else "Entrez votre PIN"
-    st.markdown(f'<div class="pin-display">{pin_display_text}</div>', unsafe_allow_html=True)
-
-    col1, col2, col3 = st.columns(3)
-    for i in range(1, 10):
-        col = [col1, col2, col3][(i - 1) % 3]
-        if col.button(str(i), key=f"btn_{i}", use_container_width=True):
-            if len(st.session_state.pin_input) < 6:
-                st.session_state.pin_input += str(i)
-                st.rerun()
-
-    c_eff, c_zero, c_val = st.columns(3)
-    if c_eff.button("❌ Effacer", use_container_width=True):
-        st.session_state.pin_input = ""
-        st.rerun()
+    # FORMULAIRE POUR SAISIE RAPIDE AU CLAVIER
+    st.markdown("### 🔑 Entrez votre PIN au clavier")
+    with st.form("form_pin_clavier", clear_on_submit=True):
+        pin_saisi = st.text_input("Code PIN", type="password", help="Tapez votre PIN et appuyez sur Entrée", placeholder="Entrez votre PIN ici...")
+        valider = st.form_submit_button("✅ Enregistrer le punch", use_container_width=True)
         
-    if c_zero.button("0", use_container_width=True):
-        if len(st.session_state.pin_input) < 6:
-            st.session_state.pin_input += "0"
-            st.rerun()
-
-    if c_val.button("✅ Valider", use_container_width=True):
-        pin = st.session_state.pin_input
-        st.session_state.pin_input = ""
-        
-        emp_trouve = next((e for e in emps_data if str(e['pin']) == str(pin)), None)
-        
-        if emp_trouve:
-            emp_id = emp_trouve['id']
-            emp_nom = emp_trouve['nom']
-            dernier_type = dernier_statut_map.get(emp_id, "OUT")
-            nouveau_type = "OUT" if dernier_type == "IN" else "IN"
-            
-            # Enregistrement à l'heure exacte du Québec
-            now_qc = datetime.now(TZ_QUEBEC)
-            now_iso = now_qc.isoformat()
-            
-            supabase.table('punchs').insert({
-                "employe_id": emp_id,
-                "timestamp": now_iso,
-                "type_punch": nouveau_type
-            }).execute()
-            
-            now_str = now_qc.strftime('%H:%M:%S')
-            if nouveau_type == "IN":
-                st.success(f"🟢 **Bonjour {emp_nom} !** Enregistré à {now_str}")
-            else:
-                st.info(f"🔴 **Au revoir {emp_nom} !** Enregistré à {now_str}")
-            st.rerun()
-        else:
-            st.error("❌ Code PIN incorrect.")
+        if valider:
+            if pin_saisi:
+                emp_trouve = next((e for e in emps_data if str(e['pin']) == str(pin_saisi)), None)
+                
+                if emp_trouve:
+                    emp_id = emp_trouve['id']
+                    emp_nom = emp_trouve['nom']
+                    dernier_type = dernier_statut_map.get(emp_id, "OUT")
+                    nouveau_type = "OUT" if dernier_type == "IN" else "IN"
+                    
+                    now_qc = datetime.now(TZ_QUEBEC)
+                    now_iso = now_qc.isoformat()
+                    
+                    supabase.table('punchs').insert({
+                        "employe_id": emp_id,
+                        "timestamp": now_iso,
+                        "type_punch": nouveau_type
+                    }).execute()
+                    
+                    now_str = now_qc.strftime('%H:%M:%S')
+                    if nouveau_type == "IN":
+                        st.success(f"🟢 **Bonjour {emp_nom} !** Enregistré à {now_str}")
+                    else:
+                        st.info(f"🔴 **Au revoir {emp_nom} !** Enregistré à {now_str}")
+                    st.rerun()
+                else:
+                    st.error("❌ Code PIN incorrect.")
 
 # ==========================================
 # 2. PANNEAU D'ADMINISTRATION
@@ -229,7 +197,6 @@ elif menu == "⚙️ Administration":
             if punch_data.data:
                 records = []
                 for row in punch_data.data:
-                    # Formatage propre de l'horodatage en heure du Québec
                     try:
                         dt_utc = pd.to_datetime(row['timestamp'], errors='coerce', utc=True)
                         dt_qc = dt_utc.tz_convert(TZ_QUEBEC).strftime('%Y-%m-%d %H:%M:%S')
@@ -237,19 +204,38 @@ elif menu == "⚙️ Administration":
                         dt_qc = row['timestamp']
 
                     records.append({
+                        'Supprimer': False,
                         'ID': row['id'],
                         'Employé': row['employes']['nom'] if row.get('employes') else 'Inconnu',
                         'Horodatage': dt_qc,
                         'Action': row['type_punch']
                     })
-                st.dataframe(pd.DataFrame(records), use_container_width=True)
                 
-                st.divider()
-                id_to_delete = st.number_input("ID à supprimer", min_value=1, step=1)
-                if st.button("🗑️ Supprimer la ligne"):
-                    supabase.table('punchs').delete().eq('id', id_to_delete).execute()
-                    st.success(f"Punch #{id_to_delete} supprimé.")
-                    st.rerun()
+                df_view = pd.DataFrame(records)
+                
+                edited_df = st.data_editor(
+                    df_view,
+                    column_config={
+                        "Supprimer": st.column_config.CheckboxColumn(
+                            "Sélectionner",
+                            help="Cochez pour supprimer",
+                            default=False,
+                        )
+                    },
+                    disabled=["ID", "Employé", "Horodatage", "Action"],
+                    hide_index=True,
+                    use_container_width=True
+                )
+                
+                to_delete_ids = edited_df[edited_df['Supprimer'] == True]['ID'].tolist()
+                
+                if to_delete_ids:
+                    st.warning(f"⚠️ {len(to_delete_ids)} ligne(s) sélectionnée(s) : ID {to_delete_ids}")
+                    if st.button("🗑️ Confirmer la suppression"):
+                        for p_id in to_delete_ids:
+                            supabase.table('punchs').delete().eq('id', p_id).execute()
+                        st.success("Punch(s) supprimé(s) avec succès !")
+                        st.rerun()
 
         with tab_rep:
             st.subheader("Rapport de paie")
